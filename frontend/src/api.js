@@ -7,7 +7,9 @@ export async function getRepositories() {
     throw new Error("Failed to fetch repositories");
   }
 
-  return response.json();
+  const data = await response.json();
+
+  return data.repositories || [];
 }
 
 export async function indexRepository(repoUrl) {
