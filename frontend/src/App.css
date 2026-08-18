@@ -1,0 +1,918 @@
+:root {
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  color: #e5e7eb;
+  background: #0f1115;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #0f1115;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.app {
+  width: 100%;
+  min-height: 100vh;
+}
+
+.container {
+  width: min(100% - 32px, 1000px);
+  margin: 0 auto;
+  padding: 48px 0 80px;
+}
+
+
+/* =========================
+   Header
+========================= */
+
+.header {
+  text-align: center;
+  margin-bottom: 42px;
+}
+
+.logo {
+  margin: 0;
+  color: #f3f4f6;
+  font-size: 42px;
+  font-weight: 700;
+  letter-spacing: -1.5px;
+}
+
+.subtitle {
+  margin: 8px 0 0;
+  color: #8b93a7;
+  font-size: 15px;
+}
+
+
+/* =========================
+   Cards
+========================= */
+
+.card {
+  background: #151820;
+  border: 1px solid #262b36;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.section-title {
+  margin: 0 0 16px;
+  color: #f3f4f6;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+
+/* =========================
+   Repository
+========================= */
+
+.repo-form {
+  display: flex;
+  gap: 10px;
+}
+
+.repo-input {
+  flex: 1;
+  min-width: 0;
+
+  padding: 12px 14px;
+
+  border: 1px solid #303642;
+  border-radius: 8px;
+
+  outline: none;
+
+  background: #0f1115;
+  color: #e5e7eb;
+}
+
+.repo-input::placeholder {
+  color: #5f6675;
+}
+
+.repo-input:focus {
+  border-color: #6366f1;
+}
+
+
+.primary-button {
+  border: none;
+  border-radius: 8px;
+
+  padding: 12px 18px;
+
+  background: #6366f1;
+  color: #ffffff;
+
+  font-weight: 600;
+
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: #5558e8;
+}
+
+.primary-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+
+/* =========================
+   Repository Status
+========================= */
+
+.status {
+  margin-top: 14px;
+
+  padding: 14px 16px;
+
+  border-radius: 8px;
+
+  background: #101a15;
+  border: 1px solid #234332;
+
+  color: #a7e0ba;
+}
+
+.status-title {
+  font-weight: 600;
+}
+
+.status-meta {
+  margin-top: 4px;
+
+  color: #7fa98b;
+
+  font-size: 13px;
+}
+
+
+/* =========================
+   Error
+========================= */
+
+.error {
+  margin-top: 14px;
+
+  padding: 12px 14px;
+
+  border-radius: 8px;
+
+  background: #211416;
+  border: 1px solid #54252b;
+
+  color: #f1a6ad;
+
+  line-height: 1.5;
+}
+
+
+/* =========================
+   Chat
+========================= */
+
+.chat-section {
+  margin-top: 28px;
+}
+
+.messages {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+
+  margin-bottom: 22px;
+}
+
+.message {
+  width: 100%;
+
+  border-radius: 12px;
+
+  padding: 20px;
+
+  border: 1px solid #282e39;
+
+  overflow: hidden;
+}
+
+.message-user {
+  background: #191d27;
+}
+
+.message-assistant {
+  background: #13161c;
+}
+
+.message-role {
+  margin-bottom: 12px;
+
+  color: #8b93a7;
+
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.message-content {
+  color: #d7dbe5;
+
+  font-size: 15px;
+
+  line-height: 1.7;
+
+  overflow-wrap: anywhere;
+}
+
+.message-content p {
+  margin: 0 0 14px;
+}
+
+.message-content p:last-child {
+  margin-bottom: 0;
+}
+
+
+/* =========================
+   Markdown Headings
+========================= */
+
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4 {
+  margin-top: 24px;
+  margin-bottom: 12px;
+
+  color: #f3f4f6;
+
+  line-height: 1.3;
+}
+
+.message-content h1 {
+  font-size: 24px;
+}
+
+.message-content h2 {
+  font-size: 20px;
+}
+
+.message-content h3 {
+  font-size: 17px;
+}
+
+.message-content h4 {
+  font-size: 15px;
+}
+
+.message-content h1:first-child,
+.message-content h2:first-child,
+.message-content h3:first-child {
+  margin-top: 0;
+}
+
+
+/* =========================
+   Markdown Lists
+========================= */
+
+.message-content ul,
+.message-content ol {
+  margin: 10px 0 18px;
+
+  padding-left: 24px;
+}
+
+.message-content li {
+  margin: 6px 0;
+
+  line-height: 1.65;
+}
+
+.message-content li > p {
+  margin: 0;
+}
+
+
+/* =========================
+   Markdown Links
+========================= */
+
+.message-content a {
+  color: #a5b4fc;
+  text-decoration: none;
+}
+
+.message-content a:hover {
+  text-decoration: underline;
+}
+
+
+/* =========================
+   Inline Code
+========================= */
+
+.message-content .inline-code {
+  display: inline;
+
+  padding: 2px 6px;
+
+  border-radius: 5px;
+
+  background: #242936;
+  color: #c7d2fe;
+
+  font-family:
+    "Cascadia Code",
+    "Fira Code",
+    Consolas,
+    monospace;
+
+  font-size: 0.88em;
+
+  white-space: break-spaces;
+}
+
+
+/* =========================
+   Code Blocks
+========================= */
+
+.message-content .code-block {
+  display: block;
+
+  width: 100%;
+
+  margin: 16px 0;
+
+  padding: 16px;
+
+  overflow-x: auto;
+
+  border: 1px solid #292f3a;
+  border-radius: 8px;
+
+  background: #090b0f;
+
+  text-align: left;
+
+  white-space: pre;
+}
+
+.message-content .code-block code {
+  display: block;
+
+  padding: 0;
+
+  background: transparent;
+
+  color: #d7dbe5;
+
+  font-family:
+    "Cascadia Code",
+    "Fira Code",
+    Consolas,
+    "Courier New",
+    monospace;
+
+  font-size: 13px;
+
+  line-height: 1.65;
+
+  white-space: pre;
+
+  word-break: normal;
+}
+
+
+/* =========================
+   Blockquotes
+========================= */
+
+.message-content blockquote {
+  margin: 16px 0;
+
+  padding: 10px 16px;
+
+  border-left: 3px solid #6366f1;
+
+  background: #171a22;
+
+  color: #aeb5c3;
+}
+
+.message-content blockquote p {
+  margin: 0;
+}
+
+
+/* =========================
+   Horizontal Rules
+========================= */
+
+.message-content hr {
+  margin: 24px 0;
+
+  border: 0;
+  border-top: 1px solid #2b303a;
+}
+
+
+/* =========================
+   Strong / Emphasis
+========================= */
+
+.message-content strong {
+  color: #f3f4f6;
+  font-weight: 650;
+}
+
+
+/* =========================
+   Sources
+========================= */
+
+.sources {
+  margin-top: 22px;
+
+  padding-top: 18px;
+
+  border-top: 1px solid #282e39;
+}
+
+.sources-title {
+  margin-bottom: 10px;
+
+  color: #8b93a7;
+
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.source {
+  padding: 11px 13px;
+
+  margin-bottom: 8px;
+
+  border-radius: 7px;
+
+  background: #171a21;
+  border: 1px solid #252b35;
+}
+
+.source:last-child {
+  margin-bottom: 0;
+}
+
+.source-file {
+  color: #c7d2fe;
+
+  font-family:
+    "Cascadia Code",
+    "Fira Code",
+    Consolas,
+    monospace;
+
+  font-size: 12px;
+
+  word-break: break-all;
+}
+
+.source-meta {
+  margin-top: 5px;
+
+  color: #6f7787;
+
+  font-size: 11px;
+}
+
+
+/* =========================
+   Composer
+========================= */
+
+.composer {
+  display: flex;
+
+  gap: 10px;
+}
+
+.question-input {
+  flex: 1;
+
+  min-height: 54px;
+  max-height: 180px;
+
+  padding: 13px 14px;
+
+  resize: vertical;
+
+  border: 1px solid #303642;
+  border-radius: 8px;
+
+  outline: none;
+
+  background: #0f1115;
+  color: #e5e7eb;
+
+  line-height: 1.5;
+}
+
+.question-input::placeholder {
+  color: #5f6675;
+}
+
+.question-input:focus {
+  border-color: #6366f1;
+}
+
+
+/* =========================
+   Loading
+========================= */
+
+.loading {
+  display: flex;
+  align-items: center;
+
+  min-height: 24px;
+
+  color: #8b93a7;
+
+  font-size: 13px;
+}
+
+
+/* =========================
+   Mobile
+========================= */
+
+@media (max-width: 700px) {
+
+  .container {
+    width: min(100% - 20px, 1000px);
+
+    padding-top: 28px;
+    padding-bottom: 50px;
+  }
+
+  .header {
+    margin-bottom: 28px;
+  }
+
+  .logo {
+    font-size: 34px;
+  }
+
+  .subtitle {
+    font-size: 14px;
+  }
+
+  .repo-form,
+  .composer {
+    flex-direction: column;
+  }
+
+  .primary-button {
+    width: 100%;
+  }
+
+  .card {
+    padding: 18px;
+  }
+
+  .message {
+    padding: 16px;
+  }
+
+  .message-content {
+    font-size: 14px;
+  }
+
+  .message-content h1 {
+    font-size: 21px;
+  }
+
+  .message-content h2 {
+    font-size: 18px;
+  }
+
+  .message-content h3 {
+    font-size: 16px;
+  }
+
+  .message-content .code-block {
+    padding: 12px;
+  }
+
+  .message-content .code-block code {
+    font-size: 12px;
+  }
+}
+
+/* =========================
+   Repository List
+========================= */
+
+.repository-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.repository-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+
+  padding: 20px;
+
+  background: #151820;
+  border: 1px solid #262b36;
+  border-radius: 12px;
+}
+
+.repository-card-main {
+  min-width: 0;
+}
+
+.repository-name {
+  margin: 0;
+
+  color: #f3f4f6;
+
+  font-size: 18px;
+}
+
+.repository-url {
+  margin: 6px 0 0;
+
+  color: #7f8798;
+
+  font-family: monospace;
+  font-size: 12px;
+
+  overflow-wrap: anywhere;
+}
+
+.repository-meta {
+  display: flex;
+  gap: 14px;
+
+  margin-top: 12px;
+
+  color: #727b8d;
+
+  font-size: 12px;
+}
+
+.repository-actions {
+  display: flex;
+  gap: 8px;
+
+  flex-shrink: 0;
+}
+
+.secondary-button {
+  padding: 12px 16px;
+
+  border: 1px solid #303642;
+  border-radius: 8px;
+
+  background: #171a21;
+  color: #d7dbe5;
+
+  font-weight: 600;
+}
+
+.secondary-button:hover:not(:disabled) {
+  background: #20242d;
+}
+
+.secondary-button:disabled {
+  opacity: 0.6;
+}
+
+@media (max-width: 700px) {
+  .repository-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .repository-actions {
+    width: 100%;
+  }
+
+  .repository-actions button {
+    flex: 1;
+  }
+}
+
+/* =========================
+   Repository / Chat Header
+========================= */
+
+.chat-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.back-button {
+  border: none;
+  padding: 0;
+  margin-bottom: 10px;
+
+  background: transparent;
+  color: #8b93a7;
+
+  font-size: 13px;
+}
+
+.back-button:hover {
+  color: #c7d2fe;
+}
+
+.chat-repository-name {
+  margin: 0;
+
+  font-size: 28px;
+  font-weight: 700;
+  color: #f3f4f6;
+}
+
+.chat-repository-url {
+  margin-top: 6px;
+
+  color: #7f8798;
+
+  font-family: monospace;
+  font-size: 12px;
+
+  overflow-wrap: anywhere;
+}
+
+.chat-repository-meta {
+  margin-top: 8px;
+
+  color: #727b8d;
+  font-size: 12px;
+}
+
+
+/* =========================
+   Empty States
+========================= */
+
+.empty-state {
+  padding: 40px 20px;
+
+  text-align: center;
+}
+
+.empty-title {
+  color: #d7dbe5;
+  font-weight: 600;
+}
+
+.empty-description {
+  margin-top: 8px;
+
+  color: #727b8d;
+  font-size: 13px;
+}
+
+.empty-chat {
+  padding: 40px 20px;
+
+  text-align: center;
+}
+
+.empty-chat-title {
+  color: #d7dbe5;
+
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.empty-chat-description {
+  margin-top: 14px;
+
+  color: #727b8d;
+
+  font-size: 13px;
+}
+
+.example-question {
+  margin-top: 8px;
+
+  color: #aab2c2;
+}
+
+
+/* =========================
+   Composer
+========================= */
+
+.composer {
+  align-items: flex-end;
+}
+
+.composer .primary-button {
+  min-height: 54px;
+}
+
+.composer-hint {
+  margin-top: 8px;
+
+  color: #626a7a;
+
+  font-size: 11px;
+  text-align: right;
+}
+
+
+/* =========================
+   Mobile
+========================= */
+
+@media (max-width: 700px) {
+
+  .chat-header {
+    flex-direction: column;
+  }
+
+  .chat-header .secondary-button {
+    width: 100%;
+  }
+
+  .chat-repository-name {
+    font-size: 24px;
+  }
+
+  .composer {
+    align-items: stretch;
+  }
+
+  .composer .primary-button {
+    width: 100%;
+  }
+
+  .composer-hint {
+    text-align: center;
+  }
+
+}
+
+.section-description {
+  margin: -8px 0 18px;
+
+  color: #7f8798;
+
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.index-card {
+  margin-bottom: 24px;
+}
