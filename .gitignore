@@ -10,6 +10,12 @@ backend/**/*.pyc
 backend/qdrant_data/
 backend/.pytest_cache/
 
+# SQLite
+backend/*.db
+backend/*.db-journal
+backend/*.db-shm
+backend/*.db-wal
+
 # Node
 frontend/node_modules/
 frontend/dist/
