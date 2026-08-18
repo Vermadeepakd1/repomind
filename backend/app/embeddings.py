@@ -1,26 +1,81 @@
-from sentence_transformers import SentenceTransformer
+import os
+
+import requests
+from dotenv import load_dotenv
 
 
-model = SentenceTransformer(
-    "all-MiniLM-L6-v2"
+load_dotenv()
+
+
+ACCOUNT_ID = os.getenv(
+    "CLOUDFLARE_ACCOUNT_ID"
 )
+
+API_TOKEN = os.getenv(
+    "CLOUDFLARE_API_TOKEN"
+)
+
+
+if not ACCOUNT_ID:
+    raise ValueError(
+        "CLOUDFLARE_ACCOUNT_ID is not set"
+    )
+
+
+if not API_TOKEN:
+    raise ValueError(
+        "CLOUDFLARE_API_TOKEN is not set"
+    )
+
+
+MODEL = "@cf/baai/bge-small-en-v1.5"
+
+BASE_URL = (
+    f"https://api.cloudflare.com/client/v4/"
+    f"accounts/{ACCOUNT_ID}/ai/run/{MODEL}"
+)
+
+
+HEADERS = {
+    "Authorization": f"Bearer {API_TOKEN}",
+    "Content-Type": "application/json",
+}
 
 
 def embed_text(text: str):
 
-    vector = model.encode(
-        text,
-        normalize_embeddings=True
+    response = requests.post(
+        BASE_URL,
+        headers=HEADERS,
+        json={
+            "text": [text]
+        },
+        timeout=60,
     )
 
-    return vector.tolist()
+    response.raise_for_status()
+
+    data = response.json()
+
+    return data["result"]["data"][0]
 
 
 def embed_texts(texts: list[str]):
 
-    vectors = model.encode(
-        texts,
-        normalize_embeddings=True
+    if not texts:
+        return []
+
+    response = requests.post(
+        BASE_URL,
+        headers=HEADERS,
+        json={
+            "text": texts
+        },
+        timeout=120,
     )
 
-    return vectors.tolist()
+    response.raise_for_status()
+
+    data = response.json()
+
+    return data["result"]["data"]

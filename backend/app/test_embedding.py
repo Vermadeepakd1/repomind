@@ -1,4 +1,4 @@
-from app.llm import embed_text
+from app.embeddings import embed_text
 
 
 vector = embed_text(
