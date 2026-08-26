@@ -59,7 +59,6 @@ def create_collection(vector_size: int):
 
 
 def add_chunks(chunks: list):
-
     if not chunks:
         return
 
@@ -91,12 +90,17 @@ def add_chunks(chunks: list):
             )
         )
 
-    client.upsert(
-        collection_name=COLLECTION_NAME,
-        points=points,
-        wait=True,
-    )
+    # Upload in smaller batches instead of one large request.
+    batch_size = 50
 
+    for start in range(0, len(points), batch_size):
+        batch = points[start:start + batch_size]
+
+        client.upsert(
+            collection_name=COLLECTION_NAME,
+            points=batch,
+            wait=True,
+        )
 
 def search_vectors(
     query_vector: list,

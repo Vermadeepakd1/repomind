@@ -1,39 +1,51 @@
-import sqlite3
+import os
+
 from datetime import datetime, timezone
-from pathlib import Path
+
+import psycopg
+
+from dotenv import load_dotenv
 
 
-DATABASE_PATH = Path("repomind.db")
+load_dotenv()
+
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+if not DATABASE_URL:
+    raise ValueError(
+        "DATABASE_URL is not set"
+    )
 
 
 def get_connection():
-    connection = sqlite3.connect(
-        DATABASE_PATH
+    return psycopg.connect(
+        DATABASE_URL
     )
-
-    connection.row_factory = sqlite3.Row
-
-    return connection
 
 
 def init_database():
 
     connection = get_connection()
 
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS repositories (
-            repository_id TEXT PRIMARY KEY,
-            repo_url TEXT NOT NULL UNIQUE,
-            repo_name TEXT NOT NULL,
-            chunk_count INTEGER NOT NULL DEFAULT 0,
-            indexed_at TEXT NOT NULL
+    try:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS repositories (
+                repository_id TEXT PRIMARY KEY,
+                repo_url TEXT NOT NULL UNIQUE,
+                repo_name TEXT NOT NULL,
+                chunk_count INTEGER NOT NULL DEFAULT 0,
+                indexed_at TIMESTAMPTZ NOT NULL
+            )
+            """
         )
-        """
-    )
 
-    connection.commit()
-    connection.close()
+        connection.commit()
+
+    finally:
+        connection.close()
 
 
 def save_repository(
@@ -45,64 +57,77 @@ def save_repository(
 
     connection = get_connection()
 
-    indexed_at = datetime.now(
-        timezone.utc
-    ).isoformat()
+    try:
 
-    connection.execute(
-        """
-        INSERT INTO repositories (
-            repository_id,
-            repo_url,
-            repo_name,
-            chunk_count,
-            indexed_at
+        indexed_at = datetime.now(
+            timezone.utc
         )
-        VALUES (?, ?, ?, ?, ?)
 
-        ON CONFLICT(repository_id)
-        DO UPDATE SET
-            repo_url = excluded.repo_url,
-            repo_name = excluded.repo_name,
-            chunk_count = excluded.chunk_count,
-            indexed_at = excluded.indexed_at
-        """,
-        (
-            repository_id,
-            repo_url,
-            repo_name,
-            chunk_count,
-            indexed_at,
+        connection.execute(
+            """
+            INSERT INTO repositories (
+                repository_id,
+                repo_url,
+                repo_name,
+                chunk_count,
+                indexed_at
+            )
+            VALUES (%s, %s, %s, %s, %s)
+
+            ON CONFLICT(repository_id)
+            DO UPDATE SET
+                repo_url = EXCLUDED.repo_url,
+                repo_name = EXCLUDED.repo_name,
+                chunk_count = EXCLUDED.chunk_count,
+                indexed_at = EXCLUDED.indexed_at
+            """,
+            (
+                repository_id,
+                repo_url,
+                repo_name,
+                chunk_count,
+                indexed_at,
+            )
         )
-    )
 
-    connection.commit()
-    connection.close()
+        connection.commit()
+
+    finally:
+        connection.close()
 
 
 def get_repositories():
 
     connection = get_connection()
 
-    rows = connection.execute(
-        """
-        SELECT
-            repository_id,
-            repo_url,
-            repo_name,
-            chunk_count,
-            indexed_at
-        FROM repositories
-        ORDER BY indexed_at DESC
-        """
-    ).fetchall()
+    try:
 
-    connection.close()
+        rows = connection.execute(
+            """
+            SELECT
+                repository_id,
+                repo_url,
+                repo_name,
+                chunk_count,
+                indexed_at
+            FROM repositories
+            ORDER BY indexed_at DESC
+            """
+        ).fetchall()
 
-    return [
-        dict(row)
-        for row in rows
-    ]
+        return [
+            {
+                "repository_id": row[0],
+                "repo_url": row[1],
+                "repo_name": row[2],
+                "chunk_count": row[3],
+                "indexed_at": row[4].isoformat(),
+            }
+            for row in rows
+        ]
+
+    finally:
+        connection.close()
 
 
 def get_repository(
@@ -111,23 +136,34 @@ def get_repository(
 
     connection = get_connection()
 
-    row = connection.execute(
-        """
-        SELECT
-            repository_id,
-            repo_url,
-            repo_name,
-            chunk_count,
-            indexed_at
-        FROM repositories
-        WHERE repository_id = ?
-        """,
-        (repository_id,)
-    ).fetchone()
+    try:
 
-    connection.close()
+        row = connection.execute(
+            """
+            SELECT
+                repository_id,
+                repo_url,
+                repo_name,
+                chunk_count,
+                indexed_at
+            FROM repositories
+            WHERE repository_id = %s
+            """,
+            (
+                repository_id,
+            )
+        ).fetchone()
 
-    if not row:
-        return None
+        if not row:
+            return None
 
-    return dict(row)
+        return {
+            "repository_id": row[0],
+            "repo_url": row[1],
+            "repo_name": row[2],
+            "chunk_count": row[3],
+            "indexed_at": row[4].isoformat(),
+        }
+
+    finally:
+        connection.close()
