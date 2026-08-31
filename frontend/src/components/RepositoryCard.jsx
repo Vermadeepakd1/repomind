@@ -3,6 +3,7 @@ function RepositoryCard({
     onOpen,
     onReindex,
     reindexing,
+    indexing,
 }) {
     return (
         <div className="repository-card">
@@ -39,6 +40,7 @@ function RepositoryCard({
                     onClick={() =>
                         onOpen(repository)
                     }
+                    disabled={indexing || reindexing}
                 >
                     Open Chat
                 </button>
@@ -48,11 +50,11 @@ function RepositoryCard({
                     onClick={() =>
                         onReindex(repository)
                     }
-                    disabled={reindexing}
+                    disabled={indexing || reindexing}
                 >
-                    {reindexing
-                        ? "Reindexing..."
-                        : "Reindex"}
+                    {reindexing ? (
+                        <><span className="button-spinner" aria-hidden="true" /> Reindexing...</>
+                    ) : "Reindex"}
                 </button>
 
             </div>

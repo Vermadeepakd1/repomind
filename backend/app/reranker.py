@@ -86,6 +86,18 @@ def content_keyword_score(
         0.08
     )
 
+
+def symbol_score(question: str, symbols: list[str]) -> float:
+    if not symbols:
+        return 0.0
+
+    question_tokens = tokenize(question)
+    symbol_tokens = set()
+    for symbol in symbols:
+        symbol_tokens.update(tokenize(symbol))
+
+    return min(len(question_tokens & symbol_tokens) * 0.06, 0.18)
+
 STOP_WORDS = {
     "how",
     "is",
@@ -190,6 +202,11 @@ def rerank_results(
             text
         )
 
+        symbol_relevance = symbol_score(
+            question,
+            payload.get("symbols", []),
+        )
+
         # --------------------------------
         # 5. Final score
         # --------------------------------
@@ -199,6 +216,7 @@ def rerank_results(
             + filename_relevance
             + path_relevance
             + content_relevance
+            + symbol_relevance
         )
 
         scored_results.append(

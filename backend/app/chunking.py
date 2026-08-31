@@ -26,6 +26,18 @@ def chunk_text(
             current_length += len(lines[end_line])
             end_line += 1
 
+        # Prefer ending at a logical blank-line or closing-brace boundary
+        # when doing so does not make the chunk too small.
+        if end_line < len(lines):
+            minimum_boundary = start_line + max(4, (end_line - start_line) // 2)
+            boundary = end_line
+            while boundary > minimum_boundary:
+                line = lines[boundary - 1].strip()
+                if not line or line.endswith(("}", "])")):
+                    end_line = boundary
+                    break
+                boundary -= 1
+
         chunk = "".join(
             lines[start_line:end_line]
         )

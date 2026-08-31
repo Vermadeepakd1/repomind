@@ -11,6 +11,7 @@ from qdrant_client.models import (
     FieldCondition,
     MatchValue,
 )
+from app.reliability import retry_call
 
 load_dotenv()
 
@@ -24,6 +25,7 @@ if QDRANT_URL and QDRANT_API_KEY:
     client = QdrantClient(
         url=QDRANT_URL,
         api_key=QDRANT_API_KEY,
+        timeout=30,
     )
 
 else:
@@ -85,6 +87,7 @@ def add_chunks(chunks: list):
                     "chunk_index": chunk["chunk_index"],
                     "start_line": chunk["start_line"],
                     "end_line": chunk["end_line"],
+                    "symbols": chunk.get("symbols", []),
                     "text": chunk["text"],
                 },
             )
@@ -96,10 +99,13 @@ def add_chunks(chunks: list):
     for start in range(0, len(points), batch_size):
         batch = points[start:start + batch_size]
 
-        client.upsert(
-            collection_name=COLLECTION_NAME,
-            points=batch,
-            wait=True,
+        retry_call(
+            lambda: client.upsert(
+                collection_name=COLLECTION_NAME,
+                points=batch,
+                wait=True,
+            ),
+            operation_name="Qdrant upsert",
         )
 
 def search_vectors(
@@ -108,20 +114,21 @@ def search_vectors(
     limit: int = 5
 ):
 
-    results = client.query_points(
-        collection_name=COLLECTION_NAME,
-        query=query_vector,
-        query_filter=Filter(
-            must=[
-                FieldCondition(
-                    key="repository_id",
-                    match=MatchValue(
-                        value=repository_id
-                    ),
-                )
-            ]
+    results = retry_call(
+        lambda: client.query_points(
+            collection_name=COLLECTION_NAME,
+            query=query_vector,
+            query_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="repository_id",
+                        match=MatchValue(value=repository_id),
+                    )
+                ]
+            ),
+            limit=limit,
         ),
-        limit=limit,
+        operation_name="Qdrant search",
     )
 
     return results.points
@@ -136,17 +143,18 @@ def delete_repository_chunks(
     ):
         return
 
-    client.delete(
-        collection_name=COLLECTION_NAME,
-        points_selector=Filter(
-            must=[
-                FieldCondition(
-                    key="repository_id",
-                    match=MatchValue(
-                        value=repository_id
+    retry_call(
+        lambda: client.delete(
+            collection_name=COLLECTION_NAME,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="repository_id",
+                        match=MatchValue(value=repository_id),
                     )
-                )
-            ]
+                ]
+            ),
+            wait=True,
         ),
-        wait=True,
+        operation_name="Qdrant delete",
     )

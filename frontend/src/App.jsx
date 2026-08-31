@@ -1,16 +1,31 @@
 import { useEffect, useState } from "react";
-import ReactMarkdown from "react-markdown";
 
 import {
   getRepositories,
   indexRepository,
+  getIndexJob,
+  createChat,
+  getChats,
+  getChat,
   askRepository,
+  authenticate,
+  setAuthToken,
 } from "./api";
 
-import RepositoryCard from "./components/RepositoryCard";
-
+import RepositoryList from "./components/RepositoryList";
+import ChatView from "./components/ChatView";
+import AuthView from "./components/AuthView";
+import BrandMark from "./components/BrandMark";
+import LandingPage from "./components/LandingPage";
+import { normalizeRepositoryUrl } from "./utils/repositoryUrl";
 
 function App() {
+
+  const [showAuth, setShowAuth] = useState(false);
+
+  const [authToken, setAuthTokenState] = useState(
+    () => localStorage.getItem("repomind_token")
+  );
 
   // =========================
   // Repository state
@@ -38,6 +53,15 @@ function App() {
   const [messages, setMessages] =
     useState([]);
 
+  const [chatId, setChatId] =
+    useState(null);
+
+  const [chatLoading, setChatLoading] =
+    useState(false);
+
+  const [creatingChat, setCreatingChat] =
+    useState(false);
+
   const [question, setQuestion] =
     useState("");
 
@@ -50,6 +74,9 @@ function App() {
   // =========================
 
   const [error, setError] =
+    useState("");
+
+  const [status, setStatus] =
     useState("");
 
 
@@ -65,8 +92,29 @@ function App() {
     return data;
   }
 
+  async function waitForIndexing(jobId) {
+    while (true) {
+      const job = await getIndexJob(jobId);
+
+      if (job.status === "completed") {
+        return job;
+      }
+
+      if (job.status === "failed") {
+        throw new Error(job.error || "Repository indexing failed.");
+      }
+
+      setStatus(`Indexing: ${job.stage || "Working..."}`);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
 
   useEffect(() => {
+    if (!authToken) {
+      return undefined;
+    }
+
     let cancelled = false;
 
     async function load() {
@@ -78,6 +126,15 @@ function App() {
         }
 
         setRepositories(data);
+
+        const repositoryId = new URLSearchParams(window.location.search).get("repo");
+        const repositoryFromUrl = data.find(
+          (repository) => repository.repository_id === repositoryId
+        );
+
+        if (!cancelled && repositoryFromUrl) {
+          handleOpenRepository(repositoryFromUrl);
+        }
       } catch (err) {
         if (cancelled) {
           return;
@@ -99,26 +156,73 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authToken]);
+
+
+  async function handleAuthenticated(mode, email, password) {
+    const data = await authenticate(mode, email, password);
+    setAuthToken(data.token);
+    setRepositoriesLoading(true);
+    setAuthTokenState(data.token);
+    setShowAuth(false);
+  }
+
+
+  function handleLogout() {
+    setAuthToken(null);
+    setAuthTokenState(null);
+    setSelectedRepository(null);
+    setMessages([]);
+    setQuestion("");
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("repo");
+    window.history.replaceState({}, "", url);
+  }
 
 
   // =========================
   // Open repository chat
   // =========================
 
-  function handleOpenRepository(
+  async function handleOpenRepository(
     repository
   ) {
 
     setError("");
+    setStatus("");
 
     setSelectedRepository(
       repository
     );
 
+    const url = new URL(window.location.href);
+    url.searchParams.set("repo", repository.repository_id);
+    window.history.replaceState({}, "", url);
+
     setMessages([]);
+    setChatId(null);
+    setChatLoading(true);
 
     setQuestion("");
+
+    try {
+      const chatList = await getChats(repository.repository_id);
+      const latestChat = chatList.chats?.[0];
+
+      if (latestChat) {
+        const chat = await getChat(latestChat.chat_id);
+        setChatId(chat.chat_id);
+        setMessages(chat.messages || []);
+      } else {
+        const chat = await createChat(repository.repository_id);
+        setChatId(chat.chat_id);
+      }
+    } catch (err) {
+      setError(err.message || "Failed to load chat history.");
+    } finally {
+      setChatLoading(false);
+    }
 
   }
 
@@ -133,12 +237,37 @@ function App() {
       null
     );
 
+    const url = new URL(window.location.href);
+    url.searchParams.delete("repo");
+    window.history.replaceState({}, "", url);
+
     setMessages([]);
+    setChatId(null);
 
     setQuestion("");
 
     setError("");
+    setStatus("");
 
+  }
+
+
+  async function handleNewChat() {
+    if (!selectedRepository) return;
+
+    try {
+      setCreatingChat(true);
+      setError("");
+      const chat = await createChat(selectedRepository.repository_id);
+      setChatId(chat.chat_id);
+      setMessages([]);
+      setQuestion("");
+      setError("");
+    } catch (err) {
+      setError(err.message || "Failed to create chat.");
+    } finally {
+      setCreatingChat(false);
+    }
   }
 
 
@@ -153,15 +282,15 @@ function App() {
     try {
 
       setError("");
+      setStatus("");
 
       setReindexingId(
         repository.repository_id
       );
+      setStatus("Preparing repository reindex...");
 
-      const data =
-        await indexRepository(
-          repository.repo_url
-        );
+      const job = await indexRepository(repository.repo_url);
+      const data = await waitForIndexing(job.job_id);
 
 
       // Refresh repository list
@@ -196,6 +325,10 @@ function App() {
 
       }
 
+      setStatus(
+        `${repository.repo_name} reindexed successfully with ${data.chunk_count} chunks.`
+      );
+
     } catch (err) {
 
       setError(
@@ -212,9 +345,33 @@ function App() {
 
   async function handleIndexNewRepository() {
 
-    if (!newRepoUrl.trim()) {
+    const trimmedUrl = newRepoUrl.trim();
+    const normalizedUrl = normalizeRepositoryUrl(trimmedUrl);
+
+    if (!trimmedUrl) {
+      setStatus("");
       setError(
         "Please enter a GitHub repository URL."
+      );
+      return;
+    }
+
+    if (!normalizedUrl) {
+      setStatus("");
+      setError(
+        "Enter a valid public GitHub repository URL, for example https://github.com/user/repository."
+      );
+      return;
+    }
+
+    if (
+      repositories.some(
+        (repository) => normalizeRepositoryUrl(repository.repo_url) === normalizedUrl
+      )
+    ) {
+      setStatus("");
+      setError(
+        "This repository is already indexed. Use Reindex on its repository card to refresh it."
       );
       return;
     }
@@ -222,15 +379,16 @@ function App() {
     try {
 
       setError("");
+      setStatus("Preparing repository index...");
       setIndexing(true);
 
-      await indexRepository(
-        newRepoUrl.trim()
-      );
+      const job = await indexRepository(trimmedUrl);
+      await waitForIndexing(job.job_id);
 
       await loadRepositories();
 
       setNewRepoUrl("");
+      setStatus("Repository indexed successfully.");
 
     } catch (err) {
 
@@ -252,6 +410,10 @@ function App() {
 
   async function handleAsk() {
 
+    if (asking) {
+      return;
+    }
+
     if (!question.trim()) {
       return;
     }
@@ -264,6 +426,11 @@ function App() {
 
       return;
 
+    }
+
+    if (!chatId) {
+      setError("Chat history is still loading. Please try again in a moment.");
+      return;
     }
 
 
@@ -293,8 +460,6 @@ function App() {
     );
 
 
-    setQuestion("");
-
     setError("");
 
     setAsking(true);
@@ -306,9 +471,18 @@ function App() {
         await askRepository(
           selectedRepository.repo_url,
           currentQuestion,
-          conversation
+          conversation,
+          chatId
         );
 
+
+      if (!data.answer) {
+        throw new Error(
+          "The repository returned an empty answer."
+        );
+      }
+
+      setQuestion("");
 
       setMessages(
         (previous) => [
@@ -323,6 +497,25 @@ function App() {
       );
 
     } catch (err) {
+
+      // Remove the optimistic user bubble on failure so a retry does not
+      // duplicate it. The original text remains in the composer below.
+      setMessages((previous) => {
+        const lastMessage = previous[previous.length - 1];
+
+        if (
+          lastMessage?.role === "user" &&
+          lastMessage.content === currentQuestion
+        ) {
+          return previous.slice(0, -1);
+        }
+
+        return previous;
+      });
+
+      // Keep the failed question in the composer so it can be edited or
+      // submitted again instead of making the user reconstruct it.
+      setQuestion(currentQuestion);
 
       setError(
         err.message ||
@@ -362,6 +555,24 @@ function App() {
   // Repository List View
   // =========================
 
+  if (!authToken) {
+    if (!showAuth) {
+      return (
+        <LandingPage
+          onGetStarted={() => setShowAuth(true)}
+          onLogin={() => setShowAuth(true)}
+        />
+      );
+    }
+
+    return (
+      <AuthView
+        onAuthenticated={handleAuthenticated}
+        onBack={() => setShowAuth(false)}
+      />
+    );
+  }
+
   if (!selectedRepository) {
 
     return (
@@ -370,142 +581,73 @@ function App() {
 
         <main className="container">
 
-          <header className="header">
-
-            <h1 className="logo">
-              RepoMind
-            </h1>
-
-            <p className="subtitle">
-              AI-powered repository understanding.
-            </p>
-
-          </header>
-          <section className="card index-card">
-
-            <h2 className="section-title">
-              Index New Repository
-            </h2>
-
-            <p className="section-description">
-              Connect a public GitHub repository and
-              start asking questions about its code.
-            </p>
-
-            <div className="repo-form">
-
-              <input
-                type="text"
-                className="repo-input"
-                placeholder="https://github.com/user/repository"
-                value={newRepoUrl}
-                onChange={(event) =>
-                  setNewRepoUrl(event.target.value)
-                }
-                disabled={indexing}
-              />
-
-              <button
-                className="primary-button"
-                onClick={handleIndexNewRepository}
-                disabled={
-                  indexing ||
-                  !newRepoUrl.trim()
-                }
-              >
-                {indexing
-                  ? "Indexing..."
-                  : "Index Repository"}
-              </button>
-
+          <header className="workspace-topbar">
+            <BrandMark />
+            <div className="workspace-topbar-right">
+              <span className="workspace-status"><span /> Workspace online</span>
+              <button className="auth-logout-button" onClick={handleLogout}>Log out</button>
             </div>
+          </header>
 
+          <section className="workspace-intro">
+            <div>
+              <div className="workspace-kicker">REPOSITORY WORKSPACE</div>
+              <h1>Your code, <em>in context.</em></h1>
+              <p>Index a public repository and turn a sprawling codebase into a conversation you can actually follow.</p>
+            </div>
+            <div className="workspace-counter">
+              <strong>{repositories.length.toString().padStart(2, "0")}</strong>
+              <span>repositories<br />in your workspace</span>
+            </div>
           </section>
 
-
-          <section className="card">
-
-            <h2 className="section-title">
-              Indexed Repositories
-            </h2>
-
-
-            {repositoriesLoading && (
-
-              <div className="loading">
-                Loading repositories...
+          <section className="index-panel">
+            <div className="index-panel-copy">
+              <span className="panel-number">01</span>
+              <div>
+                <h2>Add a repository</h2>
+                <p>Paste a public GitHub URL to create a searchable code map.</p>
               </div>
+            </div>
+            <div className="repo-form">
+              <input type="text" className="repo-input" placeholder="github.com/owner/repository" value={newRepoUrl} onChange={(event) => setNewRepoUrl(event.target.value)} disabled={indexing} />
+              <button className="primary-button" onClick={handleIndexNewRepository} disabled={indexing || !newRepoUrl.trim()}>
+                {indexing ? <><span className="button-spinner" aria-hidden="true" /> Indexing...</> : "Index repository →"}
+              </button>
+            </div>
+          </section>
 
-            )}
-
-
-            {!repositoriesLoading &&
-              repositories.length === 0 && (
-
-                <div className="empty-state">
-
-                  <div className="empty-title">
-                    No repositories indexed yet.
-                  </div>
-
-                  <div className="empty-description">
-                    Index a GitHub repository to
-                    start asking questions about
-                    its code.
-                  </div>
-
-                </div>
-
-              )}
-
-
-            {!repositoriesLoading &&
-              repositories.length > 0 && (
-
-                <div className="repository-list">
-
-                  {repositories.map(
-                    (repository) => (
-
-                      <RepositoryCard
-                        key={
-                          repository.repository_id
-                        }
-
-                        repository={
-                          repository
-                        }
-
-                        onOpen={
-                          handleOpenRepository
-                        }
-
-                        onReindex={
-                          handleReindex
-                        }
-
-                        reindexing={
-                          reindexingId ===
-                          repository.repository_id
-                        }
-                      />
-
-                    )
-                  )}
-
-                </div>
-
-              )}
-
+          <section className="repository-section">
+            <div className="section-heading-row">
+              <div>
+                <div className="workspace-kicker">YOUR LIBRARY</div>
+                <h2>Indexed repositories</h2>
+              </div>
+              <span className="section-count">{repositories.length} total</span>
+            </div>
+            <RepositoryList
+              repositories={repositories}
+              repositoriesLoading={repositoriesLoading}
+              reindexingId={reindexingId}
+              indexing={indexing}
+              onOpen={handleOpenRepository}
+              onReindex={handleReindex}
+            />
           </section>
 
 
           {error && (
 
-            <div className="error">
+            <div className="error" role="alert">
               {error}
             </div>
 
+          )}
+
+          {status && (
+            <div className="status" role="status">
+              {status}
+            </div>
           )}
 
         </main>
@@ -521,332 +663,42 @@ function App() {
   // =========================
 
   return (
-
     <div className="app">
 
       <main className="container">
 
-
-        {/* =========================
-            Chat Header
-        ========================= */}
-
-        <header className="chat-header">
-
-          <div>
-
-            <button
-              className="back-button"
-              onClick={
-                handleBackToRepositories
-              }
-            >
-              ← Repositories
-            </button>
-
-
-            <h1 className="chat-repository-name">
-              {
-                selectedRepository.repo_name
-              }
-            </h1>
-
-
-            <div className="chat-repository-url">
-
-              {
-                selectedRepository.repo_url
-              }
-
-            </div>
-
-
-            <div className="chat-repository-meta">
-
-              {
-                selectedRepository.chunk_count
-              }{" "}
-              chunks
-
-            </div>
-
-          </div>
-
-
-          <button
-            className="secondary-button"
-            onClick={() =>
-              handleReindex(
-                selectedRepository
-              )
-            }
-            disabled={
-              reindexingId ===
-              selectedRepository.repository_id
-            }
-          >
-
-            {reindexingId ===
-              selectedRepository.repository_id
-              ? "Reindexing..."
-              : "Reindex"}
-
-          </button>
-
-        </header>
-
-
-        {/* =========================
-            Error
-        ========================= */}
-
-        {error && (
-
-          <div className="error">
-            {error}
-          </div>
-
-        )}
-
-
-        {/* =========================
-            Chat
-        ========================= */}
-
-        <section className="card chat-section">
-
-
-          {/* Messages */}
-
-          <div className="messages">
-
-
-            {messages.length === 0 && (
-
-              <div className="empty-chat">
-
-                <div className="empty-chat-title">
-                  Ask anything about this repository.
-                </div>
-
-                <div className="empty-chat-description">
-
-                  For example:
-
-                  <div className="example-question">
-                    How is authentication implemented?
-                  </div>
-
-                  <div className="example-question">
-                    Where is the database configured?
-                  </div>
-
-                  <div className="example-question">
-                    How does the application start?
-                  </div>
-
-                </div>
-
-              </div>
-
-            )}
-
-
-            {messages.map(
-              (message, index) => (
-
-                <div
-                  key={index}
-                  className={
-                    message.role === "user"
-                      ? "message message-user"
-                      : "message message-assistant"
-                  }
-                >
-
-                  <div className="message-role">
-
-                    {message.role === "user"
-                      ? "You"
-                      : "RepoMind"}
-
-                  </div>
-
-
-                  <div className="message-content">
-
-                    {message.role ===
-                      "assistant" ? (
-
-                      <ReactMarkdown>
-                        {
-                          message.content
-                        }
-                      </ReactMarkdown>
-
-                    ) : (
-
-                      <p>
-                        {
-                          message.content
-                        }
-                      </p>
-
-                    )}
-
-                  </div>
-
-
-                  {/* Sources */}
-
-                  {message.role ===
-                    "assistant" &&
-                    message.sources &&
-                    message.sources.length >
-                    0 && (
-
-                      <div className="sources">
-
-                        <div className="sources-title">
-                          Sources
-                        </div>
-
-
-                        {message.sources.map(
-                          (
-                            source,
-                            sourceIndex
-                          ) => (
-
-                            <div
-                              key={
-                                sourceIndex
-                              }
-                              className="source"
-                            >
-
-                              <div className="source-file">
-
-                                {
-                                  source.file
-                                }
-
-                              </div>
-
-
-                              <div className="source-meta">
-
-                                Lines{" "}
-                                {
-                                  source.start_line
-                                }
-                                –
-                                {
-                                  source.end_line
-                                }
-
-                                {" • "}
-
-                                Relevance:{" "}
-                                {
-                                  typeof source.score ===
-                                    "number"
-                                    ? source.score.toFixed(
-                                      3
-                                    )
-                                    : "N/A"
-                                }
-
-                              </div>
-
-                            </div>
-
-                          )
-                        )}
-
-                      </div>
-
-                    )}
-
-                </div>
-
-              )
-            )}
-
-
-            {/* Thinking indicator */}
-
-            {asking && (
-
-              <div className="message message-assistant">
-
-                <div className="message-role">
-                  RepoMind
-                </div>
-
-                <div className="loading">
-                  Thinking...
-                </div>
-
-              </div>
-
-            )}
-
-          </div>
-
-
-          {/* =========================
-              Composer
-          ========================= */}
-
-          <div className="composer">
-
-            <textarea
-              className="question-input"
-              placeholder="Ask anything about this repository..."
-              value={question}
-              onChange={(event) =>
-                setQuestion(
-                  event.target.value
-                )
-              }
-              onKeyDown={
-                handleQuestionKeyDown
-              }
-              disabled={asking}
-              rows={2}
-            />
-
-
-            <button
-              className="primary-button"
-              onClick={handleAsk}
-              disabled={
-                asking ||
-                !question.trim()
-              }
-            >
-
-              {asking
-                ? "Thinking..."
-                : "Send"}
-
-            </button>
-
-          </div>
-
-
-          <div className="composer-hint">
-            Press Enter to send • Shift + Enter
-            for a new line
-          </div>
-
-        </section>
+        <ChatView
+          selectedRepository={selectedRepository}
+          messages={messages}
+          chatLoading={chatLoading}
+          creatingChat={creatingChat}
+          question={question}
+          asking={asking}
+          reindexing={
+            reindexingId ===
+            selectedRepository.repository_id
+          }
+          error={error}
+          status={status}
+          onBack={handleBackToRepositories}
+          onReindex={() =>
+            handleReindex(selectedRepository)
+          }
+          onQuestionChange={(event) =>
+            setQuestion(event.target.value)
+          }
+          onQuestionKeyDown={
+            handleQuestionKeyDown
+          }
+          onExampleQuestion={(example) => setQuestion(example)}
+          onAsk={handleAsk}
+          onLogout={handleLogout}
+          onNewChat={handleNewChat}
+        />
 
       </main>
 
     </div>
-
   );
 }
 
