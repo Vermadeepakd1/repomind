@@ -18,6 +18,11 @@ class ApiIntegrationTests(unittest.TestCase):
 
         cls.client = TestClient(app)
 
+    def test_health_check_is_available_without_authentication(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
     def test_repository_routes_require_authentication(self):
         response = self.client.get("/repositories")
         self.assertEqual(response.status_code, 401)
