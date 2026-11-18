@@ -87,6 +87,29 @@ def init_database():
         )
 
         connection.execute(
+            "ALTER TABLE repositories ADD COLUMN IF NOT EXISTS index_version TEXT"
+        )
+
+        connection.execute(
+            "ALTER TABLE index_jobs ADD COLUMN IF NOT EXISTS user_id TEXT"
+        )
+
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS rate_limits (
+                key TEXT NOT NULL,
+                window_start TIMESTAMPTZ NOT NULL,
+                hits INTEGER NOT NULL,
+                PRIMARY KEY (key, window_start)
+            )
+            """
+        )
+
+        connection.execute(
+            "DELETE FROM rate_limits WHERE window_start < now() - interval '1 day'"
+        )
+
+        connection.execute(
             """
             CREATE INDEX IF NOT EXISTS index_jobs_repository_status_idx
             ON index_jobs (repository_id, status)
@@ -154,6 +177,7 @@ def save_repository(
     repo_name: str,
     chunk_count: int,
     user_id: str | None = None,
+    index_version: str | None = None,
 ):
 
     connection = get_connection()
@@ -172,9 +196,10 @@ def save_repository(
                 repo_name,
                 chunk_count,
                 indexed_at,
-                user_id
+                user_id,
+                index_version
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
 
             ON CONFLICT(repository_id)
             DO UPDATE SET
@@ -182,7 +207,8 @@ def save_repository(
                 repo_name = EXCLUDED.repo_name,
                 chunk_count = EXCLUDED.chunk_count,
                 indexed_at = EXCLUDED.indexed_at,
-                user_id = EXCLUDED.user_id
+                user_id = EXCLUDED.user_id,
+                index_version = EXCLUDED.index_version
             """,
             (
                 repository_id,
@@ -191,6 +217,7 @@ def save_repository(
                 chunk_count,
                 indexed_at,
                 user_id,
+                index_version,
             )
         )
 
@@ -277,28 +304,17 @@ def get_user_by_id(user_id: str):
         connection.close()
 
 
-def get_repository(
-    repository_id: str
-):
-
+def get_repository(repository_id: str, user_id: str):
     connection = get_connection()
-
     try:
-
         row = connection.execute(
             """
-            SELECT
-                repository_id,
-                repo_url,
-                repo_name,
-                chunk_count,
-                indexed_at
+            SELECT repository_id, repo_url, repo_name, chunk_count,
+                   indexed_at, index_version
             FROM repositories
-            WHERE repository_id = %s
+            WHERE repository_id = %s AND user_id = %s
             """,
-            (
-                repository_id,
-            )
+            (repository_id, user_id),
         ).fetchone()
 
         if not row:
@@ -310,8 +326,39 @@ def get_repository(
             "repo_name": row[2],
             "chunk_count": row[3],
             "indexed_at": row[4].isoformat(),
+            "index_version": row[5],
         }
+    finally:
+        connection.close()
 
+
+def delete_repository(repository_id: str, user_id: str) -> bool:
+    """Delete a repository and everything stored for it. Returns False if not owned."""
+    connection = get_connection()
+    try:
+        deleted = connection.execute(
+            "DELETE FROM repositories WHERE repository_id = %s AND user_id = %s",
+            (repository_id, user_id),
+        ).rowcount
+        if not deleted:
+            connection.rollback()
+            return False
+
+        # chat_messages are removed by ON DELETE CASCADE from chats.
+        connection.execute(
+            "DELETE FROM chats WHERE repository_id = %s AND user_id = %s",
+            (repository_id, user_id),
+        )
+        connection.execute(
+            "DELETE FROM repository_files WHERE repository_id = %s AND user_id = %s",
+            (repository_id, user_id),
+        )
+        connection.execute(
+            "DELETE FROM index_jobs WHERE repository_id = %s",
+            (repository_id,),
+        )
+        connection.commit()
+        return True
     finally:
         connection.close()
 
@@ -429,22 +476,73 @@ def get_chat_messages(chat_id: str, user_id: str):
         connection.close()
 
 
-def add_chat_message(chat_id: str, role: str, content: str, sources: list | None = None):
+DEFAULT_CHAT_TITLE = "New chat"
+MAX_CHAT_TITLE_LENGTH = 60
+
+
+def title_from_question(question: str) -> str:
+    title = " ".join(question.split())
+    if len(title) > MAX_CHAT_TITLE_LENGTH:
+        title = title[: MAX_CHAT_TITLE_LENGTH - 3].rstrip() + "..."
+    return title or DEFAULT_CHAT_TITLE
+
+
+def add_chat_exchange(chat_id: str, question: str, answer: str, sources: list | None = None):
+    """Store a question and its answer atomically, naming untitled chats after the question."""
     connection = get_connection()
     try:
         now = datetime.now(timezone.utc)
         connection.execute(
             """
             INSERT INTO chat_messages (chat_id, role, content, sources, created_at)
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (%s, 'user', %s, '[]'::jsonb, %s),
+                   (%s, 'assistant', %s, %s, %s)
             """,
-            (chat_id, role, content, Json(sources or []), now),
+            (chat_id, question, now, chat_id, answer, Json(sources or []), now),
         )
         connection.execute(
-            "UPDATE chats SET updated_at = %s WHERE chat_id = %s",
-            (now, chat_id),
+            """
+            UPDATE chats
+            SET updated_at = %s,
+                title = CASE WHEN title = %s THEN %s ELSE title END
+            WHERE chat_id = %s
+            """,
+            (now, DEFAULT_CHAT_TITLE, title_from_question(question), chat_id),
         )
         connection.commit()
+    finally:
+        connection.close()
+
+
+def delete_chat(chat_id: str, user_id: str) -> bool:
+    connection = get_connection()
+    try:
+        deleted = connection.execute(
+            "DELETE FROM chats WHERE chat_id = %s AND user_id = %s",
+            (chat_id, user_id),
+        ).rowcount
+        connection.commit()
+        return bool(deleted)
+    finally:
+        connection.close()
+
+
+def increment_rate_limit(key: str, window_start: datetime) -> int:
+    """Atomically count a hit in a fixed window and return the window's total."""
+    connection = get_connection()
+    try:
+        row = connection.execute(
+            """
+            INSERT INTO rate_limits (key, window_start, hits)
+            VALUES (%s, %s, 1)
+            ON CONFLICT (key, window_start)
+            DO UPDATE SET hits = rate_limits.hits + 1
+            RETURNING hits
+            """,
+            (key, window_start),
+        ).fetchone()
+        connection.commit()
+        return row[0]
     finally:
         connection.close()
 
@@ -456,20 +554,22 @@ def save_repository_files(repository_id: str, user_id: str, files: list):
             "DELETE FROM repository_files WHERE repository_id = %s AND user_id = %s",
             (repository_id, user_id),
         )
-        for file in files:
-            content = file["content"]
-            connection.execute(
+        with connection.cursor() as cursor:
+            cursor.executemany(
                 """
                 INSERT INTO repository_files (repository_id, user_id, file_path, line_count, byte_size)
                 VALUES (%s, %s, %s, %s, %s)
                 """,
-                (
-                    repository_id,
-                    user_id,
-                    file["path"],
-                    len(content.splitlines()),
-                    len(content.encode("utf-8")),
-                ),
+                [
+                    (
+                        repository_id,
+                        user_id,
+                        file["path"],
+                        len(file["content"].splitlines()),
+                        len(file["content"].encode("utf-8")),
+                    )
+                    for file in files
+                ],
             )
         connection.commit()
     finally:

@@ -75,25 +75,3 @@ Current user question:
     )
 
     return response.text
-
-def embed_text(text: str):
-
-    response = client.models.embed_content(
-        model="gemini-embedding-001",
-        contents=text,
-    )
-
-    return response.embeddings[0].values
-
-
-def embed_texts(texts: list[str]):
-
-    response = client.models.embed_content(
-        model="gemini-embedding-001",
-        contents=texts,
-    )
-
-    return [
-        embedding.values
-        for embedding in response.embeddings
-    ]

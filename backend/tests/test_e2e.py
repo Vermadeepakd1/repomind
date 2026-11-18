@@ -18,7 +18,10 @@ class RepositoryFlowE2ETest(unittest.TestCase):
         from fastapi.testclient import TestClient
         from app.main import app
 
+        # Entering the client runs the lifespan hook (database setup).
         cls.client = TestClient(app)
+        cls.client.__enter__()
+        cls.addClassCleanup(cls.client.__exit__, None, None, None)
         email = f"e2e-{uuid4()}@example.com"
         response = cls.client.post(
             "/auth/register",

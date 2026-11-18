@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
-from threading import Lock
 from uuid import uuid4
 
 from app.repository_store import get_connection
 
 
-_lock = Lock()
+JOB_COLUMNS = """
+    job_id, repository_id, status, stage, chunk_count,
+    error, created_at, updated_at
+"""
 
 
 def _job_from_row(row) -> dict:
@@ -21,57 +23,62 @@ def _job_from_row(row) -> dict:
     }
 
 
-def create_job(repository_id: str) -> dict:
-    """Create or reuse one active indexing job per repository."""
-    with _lock:
-        connection = get_connection()
-        try:
+def create_job(repository_id: str, user_id: str) -> dict:
+    """Create or reuse one active indexing job per repository.
+
+    A transaction-scoped advisory lock serialises concurrent requests for the
+    same repository across all backend processes.
+    """
+    connection = get_connection()
+    try:
+        with connection.transaction():
+            connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (f"index_job:{repository_id}",),
+            )
             active = connection.execute(
-                """
-                SELECT job_id, repository_id, status, stage, chunk_count,
-                       error, created_at, updated_at
+                f"""
+                SELECT {JOB_COLUMNS}
                 FROM index_jobs
                 WHERE repository_id = %s
+                  AND user_id = %s
                   AND status IN ('queued', 'running')
                 ORDER BY created_at DESC
                 LIMIT 1
                 """,
-                (repository_id,),
+                (repository_id, user_id),
             ).fetchone()
 
             if active:
                 return _job_from_row(active)
 
             now = datetime.now(timezone.utc)
-            job_id = str(uuid4())
-            connection.execute(
-                """
+            row = connection.execute(
+                f"""
                 INSERT INTO index_jobs (
-                    job_id, repository_id, status, stage,
+                    job_id, repository_id, user_id, status, stage,
                     chunk_count, error, created_at, updated_at
                 )
-                VALUES (%s, %s, 'queued', 'Waiting to start', NULL, NULL, %s, %s)
+                VALUES (%s, %s, %s, 'queued', 'Waiting to start', NULL, NULL, %s, %s)
+                RETURNING {JOB_COLUMNS}
                 """,
-                (job_id, repository_id, now, now),
-            )
-            connection.commit()
-
-            return get_job(job_id)
-        finally:
-            connection.close()
+                (str(uuid4()), repository_id, user_id, now, now),
+            ).fetchone()
+            return _job_from_row(row)
+    finally:
+        connection.close()
 
 
-def get_job(job_id: str) -> dict | None:
+def get_job(job_id: str, user_id: str) -> dict | None:
     connection = get_connection()
     try:
         row = connection.execute(
-            """
-            SELECT job_id, repository_id, status, stage, chunk_count,
-                   error, created_at, updated_at
+            f"""
+            SELECT {JOB_COLUMNS}
             FROM index_jobs
-            WHERE job_id = %s
+            WHERE job_id = %s AND user_id = %s
             """,
-            (job_id,),
+            (job_id, user_id),
         ).fetchone()
         return _job_from_row(row) if row else None
     finally:

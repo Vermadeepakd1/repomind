@@ -2,7 +2,14 @@ from app.embeddings import embed_text
 from app.vector_db import search_vectors
 
 from app.reranker import rerank_results
-REPOSITORY_ID = "0ffe5461cac267ca"
+import sys
+
+# Usage (from backend/): python -m scripts.evaluate_retrieval <repository_id>
+# The expected files below describe one specific sample repository; edit them
+# to match the repository you are evaluating.
+if len(sys.argv) != 2:
+    sys.exit("Usage: python -m scripts.evaluate_retrieval <repository_id>")
+REPOSITORY_ID = sys.argv[1]
 
 
 tests = [

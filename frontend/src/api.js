@@ -1,10 +1,19 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8200";
 let authToken = localStorage.getItem("repomind_token");
+let unauthorizedHandler = null;
 
 export function setAuthToken(token) {
   authToken = token;
   if (token) localStorage.setItem("repomind_token", token);
   else localStorage.removeItem("repomind_token");
+}
+
+/**
+ * Register a callback for when an authenticated request is rejected with 401
+ * (for example, an expired token), so the app can sign the user out.
+ */
+export function setUnauthorizedHandler(handler) {
+  unauthorizedHandler = handler;
 }
 
 function requestHeaders(json = false) {
@@ -50,122 +59,106 @@ async function getErrorMessage(response, fallback) {
   }
 }
 
-export async function getRepositories() {
-  const response = await fetch(`${API_BASE_URL}/repositories`, {
-    headers: requestHeaders(),
+async function request(path, { method = "GET", body, signal, fallbackError }) {
+  const sentWithToken = Boolean(authToken);
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers: requestHeaders(body !== undefined),
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal,
   });
 
   if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, "Failed to fetch repositories."),
-    );
+    const message = await getErrorMessage(response, fallbackError);
+    if (response.status === 401 && sentWithToken && unauthorizedHandler) {
+      unauthorizedHandler(message);
+    }
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
 
-  const data = await response.json();
+  return response.status === 204 ? null : response.json();
+}
 
+export async function getRepositories() {
+  const data = await request("/repositories", {
+    fallbackError: "Failed to fetch repositories.",
+  });
   return data.repositories || [];
 }
 
-export async function indexRepository(repoUrl) {
-  const response = await fetch(`${API_BASE_URL}/repositories/index`, {
+export function indexRepository(repoUrl) {
+  return request("/repositories/index", {
     method: "POST",
-
-    headers: requestHeaders(true),
-
-    body: JSON.stringify({
-      repo_url: repoUrl,
-    }),
+    body: { repo_url: repoUrl },
+    fallbackError: "Failed to index repository.",
   });
-
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, "Failed to index repository."),
-    );
-  }
-
-  return response.json();
 }
 
-export async function askRepository(repoUrl, question, conversation = [], chatId = null) {
-  const response = await fetch(`${API_BASE_URL}/ask`, {
+export function deleteRepository(repositoryId) {
+  return request(`/repositories/${repositoryId}`, {
+    method: "DELETE",
+    fallbackError: "Failed to delete repository.",
+  });
+}
+
+export function askRepository(repoUrl, question, conversation = [], chatId = null) {
+  return request("/ask", {
     method: "POST",
-
-    headers: requestHeaders(true),
-
-    body: JSON.stringify({
+    body: {
       repo_url: repoUrl,
       question,
       conversation,
       chat_id: chatId,
-    }),
+    },
+    fallbackError: "Failed to ask repository.",
   });
-
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, "Failed to ask repository."),
-    );
-  }
-
-  return response.json();
 }
 
-export async function getIndexJob(jobId) {
-  const response = await fetch(`${API_BASE_URL}/repositories/index/${jobId}`, {
-    headers: requestHeaders(),
+export function getIndexJob(jobId, { signal } = {}) {
+  return request(`/repositories/index/${jobId}`, {
+    signal,
+    fallbackError: "Failed to fetch indexing status.",
   });
-
-  if (!response.ok) {
-    throw new Error(
-      await getErrorMessage(response, "Failed to fetch indexing status."),
-    );
-  }
-
-  return response.json();
 }
 
-export async function createChat(repositoryId) {
-  const response = await fetch(`${API_BASE_URL}/repositories/${repositoryId}/chats`, {
+export function createChat(repositoryId) {
+  return request(`/repositories/${repositoryId}/chats`, {
     method: "POST",
-    headers: requestHeaders(),
+    fallbackError: "Failed to create chat.",
   });
-  if (!response.ok) throw new Error(await getErrorMessage(response, "Failed to create chat."));
-  return response.json();
 }
 
-export async function getChats(repositoryId) {
-  const response = await fetch(`${API_BASE_URL}/repositories/${repositoryId}/chats`, {
-    headers: requestHeaders(),
+export function getChats(repositoryId) {
+  return request(`/repositories/${repositoryId}/chats`, {
+    fallbackError: "Failed to load chats.",
   });
-  if (!response.ok) throw new Error(await getErrorMessage(response, "Failed to load chats."));
-  return response.json();
 }
 
-export async function getChat(chatId) {
-  const response = await fetch(`${API_BASE_URL}/chats/${chatId}`, {
-    headers: requestHeaders(),
+export function getChat(chatId) {
+  return request(`/chats/${chatId}`, {
+    fallbackError: "Failed to load chat.",
   });
-  if (!response.ok) throw new Error(await getErrorMessage(response, "Failed to load chat."));
-  return response.json();
 }
 
-export async function getRepositoryFiles(repositoryId) {
-  const response = await fetch(`${API_BASE_URL}/repositories/${repositoryId}/files`, {
-    headers: requestHeaders(),
+export function deleteChat(chatId) {
+  return request(`/chats/${chatId}`, {
+    method: "DELETE",
+    fallbackError: "Failed to delete chat.",
   });
-  if (!response.ok) throw new Error(await getErrorMessage(response, "Failed to load repository files."));
-  return response.json();
 }
 
-export async function authenticate(mode, email, password) {
-  const response = await fetch(`${API_BASE_URL}/auth/${mode}`, {
+export function getRepositoryFiles(repositoryId) {
+  return request(`/repositories/${repositoryId}/files`, {
+    fallbackError: "Failed to load repository files.",
+  });
+}
+
+export function authenticate(mode, email, password) {
+  return request(`/auth/${mode}`, {
     method: "POST",
-    headers: requestHeaders(true),
-    body: JSON.stringify({ email, password }),
+    body: { email, password },
+    fallbackError: "Authentication failed.",
   });
-
-  if (!response.ok) {
-    throw new Error(await getErrorMessage(response, "Authentication failed."));
-  }
-
-  return response.json();
 }

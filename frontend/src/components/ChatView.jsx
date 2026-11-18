@@ -22,7 +22,13 @@ function ChatView({
     onAsk,
     onLogout,
     onNewChat,
+    chats = [],
+    chatId,
+    onSelectChat,
+    onDeleteChat,
 }) {
+    const busy = asking || reindexing || chatLoading || creatingChat;
+
     const messagesEndRef = useRef(null);
 
     useEffect(() => {
@@ -68,6 +74,32 @@ function ChatView({
                     {creatingChat ? "Creating..." : "New chat"}
                 </button>
             </header>
+
+            {chats.length > 0 && (
+                <div className="chat-switcher">
+                    <label htmlFor="chat-select">Conversation</label>
+                    <select
+                        id="chat-select"
+                        value={chatId || ""}
+                        onChange={(event) => onSelectChat(event.target.value)}
+                        disabled={busy}
+                    >
+                        {chats.map((chat) => (
+                            <option key={chat.chat_id} value={chat.chat_id}>
+                                {chat.title}
+                            </option>
+                        ))}
+                    </select>
+                    <button
+                        type="button"
+                        className="secondary-button danger-button"
+                        onClick={onDeleteChat}
+                        disabled={busy || !chatId}
+                    >
+                        Delete chat
+                    </button>
+                </div>
+            )}
 
             <RepositoryExplorer repositoryId={selectedRepository.repository_id} />
 

@@ -1,16 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   getRepositories,
   indexRepository,
+  deleteRepository,
   getIndexJob,
   createChat,
   getChats,
   getChat,
+  deleteChat,
   askRepository,
   authenticate,
   setAuthToken,
+  setUnauthorizedHandler,
 } from "./api";
+import { pollIndexJob } from "./utils/pollIndexJob";
 
 import RepositoryList from "./components/RepositoryList";
 import ChatView from "./components/ChatView";
@@ -19,9 +23,32 @@ import BrandMark from "./components/BrandMark";
 import LandingPage from "./components/LandingPage";
 import { normalizeRepositoryUrl } from "./utils/repositoryUrl";
 
+
+// Loads the most recent chat for a repository, creating one if none exist.
+async function loadLatestChat(repositoryId) {
+  const chatList = (await getChats(repositoryId)).chats || [];
+  const latestChat = chatList[0];
+
+  if (latestChat) {
+    const chat = await getChat(latestChat.chat_id);
+    return {
+      chats: chatList,
+      chatId: chat.chat_id,
+      messages: chat.messages || [],
+    };
+  }
+
+  const chat = await createChat(repositoryId);
+  return { chats: [chat], chatId: chat.chat_id, messages: [] };
+}
+
 function App() {
 
   const [showAuth, setShowAuth] = useState(false);
+  const [authNotice, setAuthNotice] = useState("");
+
+  // Aborts in-flight indexing status polling (e.g. on logout).
+  const pollingControllerRef = useRef(null);
 
   const [authToken, setAuthTokenState] = useState(
     () => localStorage.getItem("repomind_token")
@@ -42,6 +69,9 @@ function App() {
   const [reindexingId, setReindexingId] =
     useState(null);
 
+  const [deletingId, setDeletingId] =
+    useState(null);
+
   const [newRepoUrl, setNewRepoUrl] = useState("");
   const [indexing, setIndexing] = useState(false);
 
@@ -55,6 +85,9 @@ function App() {
 
   const [chatId, setChatId] =
     useState(null);
+
+  const [chats, setChats] =
+    useState([]);
 
   const [chatLoading, setChatLoading] =
     useState(false);
@@ -93,21 +126,39 @@ function App() {
   }
 
   async function waitForIndexing(jobId) {
-    while (true) {
-      const job = await getIndexJob(jobId);
+    const controller = new AbortController();
+    pollingControllerRef.current = controller;
 
-      if (job.status === "completed") {
-        return job;
+    try {
+      return await pollIndexJob({
+        jobId,
+        fetchJob: getIndexJob,
+        signal: controller.signal,
+        onProgress: (job) =>
+          setStatus(`Indexing: ${job.stage || "Working..."}`),
+      });
+    } finally {
+      if (pollingControllerRef.current === controller) {
+        pollingControllerRef.current = null;
       }
-
-      if (job.status === "failed") {
-        throw new Error(job.error || "Repository indexing failed.");
-      }
-
-      setStatus(`Indexing: ${job.stage || "Working..."}`);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
+
+  function isAbortError(err) {
+    return err?.name === "AbortError";
+  }
+
+
+  // Sign out automatically when the API rejects the stored token.
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      handleLogout();
+      setAuthNotice("Your session has expired. Please log in again.");
+      setShowAuth(true);
+    });
+
+    return () => setUnauthorizedHandler(null);
+  });
 
 
   useEffect(() => {
@@ -164,16 +215,28 @@ function App() {
     setAuthToken(data.token);
     setRepositoriesLoading(true);
     setAuthTokenState(data.token);
+    setAuthNotice("");
     setShowAuth(false);
   }
 
 
   function handleLogout() {
+    pollingControllerRef.current?.abort();
+    pollingControllerRef.current = null;
+
     setAuthToken(null);
     setAuthTokenState(null);
+    setAuthNotice("");
     setSelectedRepository(null);
+    setRepositories([]);
     setMessages([]);
+    setChats([]);
+    setChatId(null);
     setQuestion("");
+    setIndexing(false);
+    setReindexingId(null);
+    setError("");
+    setStatus("");
 
     const url = new URL(window.location.href);
     url.searchParams.delete("repo");
@@ -201,29 +264,77 @@ function App() {
     window.history.replaceState({}, "", url);
 
     setMessages([]);
+    setChats([]);
     setChatId(null);
     setChatLoading(true);
 
     setQuestion("");
 
     try {
-      const chatList = await getChats(repository.repository_id);
-      const latestChat = chatList.chats?.[0];
-
-      if (latestChat) {
-        const chat = await getChat(latestChat.chat_id);
-        setChatId(chat.chat_id);
-        setMessages(chat.messages || []);
-      } else {
-        const chat = await createChat(repository.repository_id);
-        setChatId(chat.chat_id);
-      }
+      const latest = await loadLatestChat(repository.repository_id);
+      setChats(latest.chats);
+      setChatId(latest.chatId);
+      setMessages(latest.messages);
     } catch (err) {
       setError(err.message || "Failed to load chat history.");
     } finally {
       setChatLoading(false);
     }
 
+  }
+
+
+  async function openLatestChat(repositoryId) {
+    const latest = await loadLatestChat(repositoryId);
+    setChats(latest.chats);
+    setChatId(latest.chatId);
+    setMessages(latest.messages);
+  }
+
+
+  async function refreshChats(repositoryId) {
+    try {
+      const chatList = await getChats(repositoryId);
+      setChats(chatList.chats || []);
+    } catch {
+      // The chat list is cosmetic here; the conversation itself is saved.
+    }
+  }
+
+
+  async function handleSelectChat(nextChatId) {
+    if (!nextChatId || nextChatId === chatId) return;
+
+    try {
+      setChatLoading(true);
+      setError("");
+      const chat = await getChat(nextChatId);
+      setChatId(chat.chat_id);
+      setMessages(chat.messages || []);
+      setQuestion("");
+    } catch (err) {
+      setError(err.message || "Failed to load chat.");
+    } finally {
+      setChatLoading(false);
+    }
+  }
+
+
+  async function handleDeleteChat() {
+    if (!selectedRepository || !chatId) return;
+    if (!window.confirm("Delete this chat and its messages? This cannot be undone.")) return;
+
+    try {
+      setChatLoading(true);
+      setError("");
+      await deleteChat(chatId);
+      await openLatestChat(selectedRepository.repository_id);
+      setQuestion("");
+    } catch (err) {
+      setError(err.message || "Failed to delete chat.");
+    } finally {
+      setChatLoading(false);
+    }
   }
 
 
@@ -242,6 +353,7 @@ function App() {
     window.history.replaceState({}, "", url);
 
     setMessages([]);
+    setChats([]);
     setChatId(null);
 
     setQuestion("");
@@ -259,6 +371,7 @@ function App() {
       setCreatingChat(true);
       setError("");
       const chat = await createChat(selectedRepository.repository_id);
+      setChats((previous) => [chat, ...previous]);
       setChatId(chat.chat_id);
       setMessages([]);
       setQuestion("");
@@ -331,6 +444,10 @@ function App() {
 
     } catch (err) {
 
+      if (isAbortError(err)) {
+        return;
+      }
+
       setError(
         err.message ||
         "Failed to reindex repository."
@@ -340,6 +457,36 @@ function App() {
 
       setReindexingId(null);
 
+    }
+  }
+
+
+  async function handleDeleteRepository(repository) {
+    if (
+      !window.confirm(
+        `Delete ${repository.repo_name}? Its index and all of its chats will be removed. This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setError("");
+      setStatus("");
+      setDeletingId(repository.repository_id);
+
+      await deleteRepository(repository.repository_id);
+
+      setRepositories((previous) =>
+        previous.filter(
+          (item) => item.repository_id !== repository.repository_id
+        )
+      );
+      setStatus(`${repository.repo_name} was deleted.`);
+    } catch (err) {
+      setError(err.message || "Failed to delete repository.");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -391,6 +538,10 @@ function App() {
       setStatus("Repository indexed successfully.");
 
     } catch (err) {
+
+      if (isAbortError(err)) {
+        return;
+      }
 
       setError(
         err.message ||
@@ -496,6 +647,9 @@ function App() {
         ]
       );
 
+      // The first question in a chat becomes its title on the server.
+      refreshChats(selectedRepository.repository_id);
+
     } catch (err) {
 
       // Remove the optimistic user bubble on failure so a retry does not
@@ -567,8 +721,13 @@ function App() {
 
     return (
       <AuthView
+        key={authNotice}
+        notice={authNotice}
         onAuthenticated={handleAuthenticated}
-        onBack={() => setShowAuth(false)}
+        onBack={() => {
+          setAuthNotice("");
+          setShowAuth(false);
+        }}
       />
     );
   }
@@ -629,9 +788,11 @@ function App() {
               repositories={repositories}
               repositoriesLoading={repositoriesLoading}
               reindexingId={reindexingId}
+              deletingId={deletingId}
               indexing={indexing}
               onOpen={handleOpenRepository}
               onReindex={handleReindex}
+              onDelete={handleDeleteRepository}
             />
           </section>
 
@@ -694,6 +855,10 @@ function App() {
           onAsk={handleAsk}
           onLogout={handleLogout}
           onNewChat={handleNewChat}
+          chats={chats}
+          chatId={chatId}
+          onSelectChat={handleSelectChat}
+          onDeleteChat={handleDeleteChat}
         />
 
       </main>

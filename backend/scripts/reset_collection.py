@@ -1,4 +1,8 @@
-from app.vector_db import client, COLLECTION_NAME
+# Deletes the entire Qdrant collection for every user. Usage (from backend/):
+#   python -m scripts.reset_collection
+from app.vector_db import COLLECTION_NAME, get_client
+
+client = get_client()
 
 
 if client.collection_exists(COLLECTION_NAME):

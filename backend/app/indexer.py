@@ -6,7 +6,8 @@ from app.vector_db import add_chunks
 
 def index_repository(
     files: list,
-    repository_id: str
+    repository_id: str,
+    index_version: str | None = None,
 ):
     # Larger embedding batches reduce provider round trips while staying
     # small enough for the embedding API request limits.
@@ -21,6 +22,7 @@ def index_repository(
         for index, chunk in enumerate(chunks):
             pending_chunks.append({
                 "repository_id": repository_id,
+                "index_version": index_version,
                 "file_path": file["path"],
                 "chunk_index": index,
                 "text": chunk["text"],

@@ -1,16 +1,21 @@
-# React + Vite
+# RepoMind frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite web app for RepoMind. See the [root README](../README.md) for full setup.
 
-Currently, two official plugins are available:
+```bash
+npm install
+npm run dev      # start the dev server (http://localhost:5173)
+npm run lint
+npm test         # node --test over src/utils/*.test.js
+npm run build
+```
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The API URL defaults to `http://127.0.0.1:8200`; override it with `VITE_API_URL` in `frontend/.env`.
 
-## React Compiler
+## Layout
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- `src/api.js` – API client. All requests go through one helper that signs the user out when a stored token is rejected (`401`).
+- `src/App.jsx` – app state: auth, repositories, indexing, chats.
+- `src/components/` – views (landing, auth, repository list, chat).
+- `src/utils/pollIndexJob.js` – indexing status polling with a timeout, retries for transient errors, and cancellation on logout.
+- `src/utils/repositoryUrl.js` – GitHub URL normalisation used to detect duplicates.

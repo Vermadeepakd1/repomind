@@ -2,9 +2,13 @@ function RepositoryCard({
     repository,
     onOpen,
     onReindex,
+    onDelete,
     reindexing,
+    deleting,
     indexing,
 }) {
+    const busy = indexing || reindexing || deleting;
+
     return (
         <div className="repository-card">
 
@@ -40,7 +44,7 @@ function RepositoryCard({
                     onClick={() =>
                         onOpen(repository)
                     }
-                    disabled={indexing || reindexing}
+                    disabled={busy}
                 >
                     Open Chat
                 </button>
@@ -50,11 +54,21 @@ function RepositoryCard({
                     onClick={() =>
                         onReindex(repository)
                     }
-                    disabled={indexing || reindexing}
+                    disabled={busy}
                 >
                     {reindexing ? (
                         <><span className="button-spinner" aria-hidden="true" /> Reindexing...</>
                     ) : "Reindex"}
+                </button>
+
+                <button
+                    className="secondary-button danger-button"
+                    onClick={() =>
+                        onDelete(repository)
+                    }
+                    disabled={busy}
+                >
+                    {deleting ? "Deleting..." : "Delete"}
                 </button>
 
             </div>

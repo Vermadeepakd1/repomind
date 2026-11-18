@@ -2466,3 +2466,34 @@ body { color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, sans-ser
   .workspace-counter { min-height: 64px; padding: 14px 0 0; border-top: 1px solid var(--line); }
   .workspace-counter::before { display: none; }
 }
+
+/* Destructive actions */
+.danger-button { color: #b34d35; }
+.danger-button:hover:not(:disabled) { border-color: #b34d35; background: #fff4f1; color: #b34d35; }
+
+/* Chat switcher */
+.chat-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.chat-switcher label {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.chat-switcher select {
+  flex: 1 1 240px;
+  max-width: 420px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+}

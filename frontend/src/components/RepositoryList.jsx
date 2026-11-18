@@ -4,9 +4,11 @@ function RepositoryList({
     repositories,
     repositoriesLoading,
     reindexingId,
+    deletingId,
     indexing,
     onOpen,
     onReindex,
+    onDelete,
 }) {
     if (repositoriesLoading) {
         return (
@@ -46,6 +48,10 @@ function RepositoryList({
                     repository={repository}
                     onOpen={onOpen}
                     onReindex={onReindex}
+                    onDelete={onDelete}
+                    deleting={
+                        deletingId === repository.repository_id
+                    }
                     reindexing={
                         reindexingId === repository.repository_id
                     }

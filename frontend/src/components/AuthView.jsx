@@ -1,11 +1,11 @@
 import { useState } from "react";
 import BrandMark from "./BrandMark";
 
-function AuthView({ onAuthenticated, onBack }) {
+function AuthView({ onAuthenticated, onBack, notice = "" }) {
     const [mode, setMode] = useState("login");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
+    const [error, setError] = useState(notice);
     const [loading, setLoading] = useState(false);
 
     async function handleSubmit(event) {
